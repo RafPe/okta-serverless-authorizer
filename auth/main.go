@@ -59,13 +59,19 @@ func generatePolicy(tkn *jwtData, effect, resource string) events.APIGatewayCust
 func handleRequest(ctx context.Context, event events.APIGatewayCustomAuthorizerRequest) (events.APIGatewayCustomAuthorizerResponse, error) {
 	log.Println(event)
 
+	log.Println("Create tokenData")
 	tokenData := &jwtData{
 		accessToken: extractJWT(event.AuthorizationToken),
 	}
 
-	tokenData.ParseJWT()
-	tokenData.ExtractTokenInfo()
-	tokenData.ExtractScopes()
+	log.Println("ParseJWT")
+	err := tokenData.ParseJWT()
+	if err != nil {
+		log.Println("Error while parsing JWT")
+		log.Println(err)
+		// Return a 401 Unauthorized response
+		return events.APIGatewayCustomAuthorizerResponse{}, errors.New("Token is invalid")
+	}
 
 	// SCENARIO 1: Extract programatically from JWK
 	//
@@ -93,11 +99,16 @@ func handleRequest(ctx context.Context, event events.APIGatewayCustomAuthorizerR
 	if err := tokenData.jwt.Validate(rsaPublic, crypto.SigningMethodRS256); err == nil {
 		// For future you could also do claims and perform allow there
 		log.Println("Validate success")
+
+		log.Println("ExtractTokenInfo")
+		tokenData.ExtractTokenInfo()
+		log.Println("ExtractScopes")
+		tokenData.ExtractScopes()
+
 		return generatePolicy(tokenData, "Allow", event.MethodArn), nil
 	}
 
 	log.Println("Validate failure")
-	log.Println(err)
 
 	// Return a 401 Unauthorized response
 	return events.APIGatewayCustomAuthorizerResponse{}, errors.New("Unauthorized")
@@ -115,7 +126,6 @@ func (tkn *jwtData) ParseJWT() error {
 
 	tkn.jwt, err = jws.ParseJWT([]byte(tkn.accessToken))
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
@@ -125,9 +135,17 @@ func (tkn *jwtData) ParseJWT() error {
 //ExtractTokenInfo
 //
 func (tkn *jwtData) ExtractTokenInfo() {
+	log.Println("executing > ExtractTokenInfo")
 
-	tkn.sub, _ = tkn.jwt.Claims().Subject()
-	tkn.iss, _ = tkn.jwt.Claims().Issuer()
+	sub, _ := tkn.jwt.Claims().Subject()
+	log.Println(sub)
+	iss, _ := tkn.jwt.Claims().Issuer()
+	log.Println(iss)
+
+	tkn.sub = sub
+	tkn.iss = iss
+
+	log.Println("finished > ExtractTokenInfo")
 }
 
 //ExtractScopes
@@ -148,6 +166,7 @@ func (tkn *jwtData) ExtractScopes() {
 //extractJWT: Extracts from Authorization header
 //
 func extractJWT(authHeader string) string {
+	log.Println("extractJWT")
 	splitToken := strings.Split(authHeader, "Bearer")
 	if len(splitToken) > 0 {
 		jwt := strings.TrimSpace(splitToken[1])
